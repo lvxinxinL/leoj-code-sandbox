@@ -3,11 +3,15 @@ package icu.leshine.leojcodesandbox.controller;
 import cn.hutool.core.io.FileUtil;
 import cn.hutool.core.io.resource.ResourceUtil;
 import cn.hutool.core.util.StrUtil;
+import cn.hutool.dfa.FoundWord;
+import cn.hutool.dfa.WordTree;
+import cn.hutool.extra.tokenizer.Word;
 import icu.leshine.leojcodesandbox.CodeSandbox;
 import icu.leshine.leojcodesandbox.entity.ExecuteCodeRequest;
 import icu.leshine.leojcodesandbox.entity.ExecuteCodeResponse;
 import icu.leshine.leojcodesandbox.entity.ExecuteMessage;
 import icu.leshine.leojcodesandbox.entity.JudgeInfo;
+import icu.leshine.leojcodesandbox.security.MySecurityManager;
 import icu.leshine.leojcodesandbox.utils.ProcessUtil;
 
 import java.io.*;
@@ -32,6 +36,23 @@ public class JavaNativeCodeSandbox implements CodeSandbox {
 
     private static final String JAVA_CLASS_NANE = "Main.java";
 
+    private static final String SECURITY_MANAGER_PATH = "D:\\code\\leoj-code-sandbox\\src\\main\\resources\\security";
+
+    private static final String SECURITY_MANAGER_CLASS_NAME = "MySecurityManager";
+
+    /**
+     * 命令黑名单
+     */
+    private static final List<String> COMMAND_BLACK_LIST = Arrays.asList("Files", "exec");
+
+    private static final WordTree WORD_TREE;
+
+    // 初始化字典树，添加禁止词汇黑名单
+    static {
+        WORD_TREE = new WordTree();
+        WORD_TREE.addWords(COMMAND_BLACK_LIST);
+    }
+
     public static void main(String[] args) {
         JavaNativeCodeSandbox javaNativeCodeSandbox = new JavaNativeCodeSandbox();
         ExecuteCodeRequest executeCodeRequest = new ExecuteCodeRequest();
@@ -50,10 +71,19 @@ public class JavaNativeCodeSandbox implements CodeSandbox {
 
     @Override
     public ExecuteCodeResponse executeCode(ExecuteCodeRequest executeCodeRequest) {
+        // 设置
+        System.setSecurityManager(new MySecurityManager());
         // 获取题目提交请求信息
         List<String> inputList = executeCodeRequest.getInputList();
         String code = executeCodeRequest.getCode();
         String language = executeCodeRequest.getLanguage();
+
+        // 校验代码中的异常（危险）命令
+//        FoundWord foundWord = WORD_TREE.matchWord(code);
+//        if (foundWord != null) {
+//            System.out.println("代码中包含禁止词：" + foundWord.getWord());
+//            return null;
+//        }
 
         // 1. 将用户提交的代码存到文件里
         String userDir = System.getProperty(USER_DIR);
@@ -83,7 +113,8 @@ public class JavaNativeCodeSandbox implements CodeSandbox {
         List<ExecuteMessage> executeMessageList = new ArrayList<>();
         try {
             for (String inputArgs : inputList) {
-                String runCmd = String.format("java -Dfile.encoding=UTF-8 -cp %s Main %s", userCodeParentPath, inputArgs);
+//                String runCmd = String.format("java -Xmx256m -Dfile.encoding=UTF-8 -cp %s Main %s", userCodeParentPath, inputArgs);
+                String runCmd = String.format("java -Xmx256m -Dfile.encoding=UTF-8 -cp %s;%s -Djava.security.manager=%s Main %s", userCodeParentPath, SECURITY_MANAGER_PATH, SECURITY_MANAGER_CLASS_NAME, inputArgs);
                 ExecuteMessage executeMessage = ProcessUtil.runProcessAndGetMessage(runCmd, "运行");
                 executeMessageList.add(executeMessage);
                 System.out.println(executeMessage);
@@ -141,7 +172,7 @@ public class JavaNativeCodeSandbox implements CodeSandbox {
     private ExecuteCodeResponse getErrorResponse(Exception e) {
         ExecuteCodeResponse executeCodeResponse = new ExecuteCodeResponse();
         executeCodeResponse.setOutputList(new ArrayList<>());
-        executeCodeResponse.setMessage(null);
+        executeCodeResponse.setMessage(e.getMessage());
         // 代码沙箱错误
         executeCodeResponse.setStatus(2);
         executeCodeResponse.setJudgeInfo(new JudgeInfo());
